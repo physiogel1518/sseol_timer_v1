@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>썰 타이머</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #ffffff;
+      color: #111827;
+      padding: 1.5rem;
+    }
+
+    .timer-wrapper {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.2rem;
+    }
+
+    .title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .circle-timer {
+      width: min(75vw, 320px);
+      height: min(75vw, 320px);
+      position: relative;
+    }
+
+    .circle-timer svg {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      z-index: 1;
+    }
+
+    .circle-bg {
+      fill: none;
+      stroke: #e5e7eb;
+      stroke-width: 10;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+
+    .circle-progress {
+      fill: none;
+      stroke: #111827;
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 0 9999;
+      stroke-dashoffset: 0;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+
+    .hand {
+      stroke: #111827;
+      stroke-width: 3;
+      stroke-linecap: round;
+    }
+
+    .inner-content {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .label {
+      font-size: 1.2rem;
+      font-weight: 700;
+      white-space: pre-line;
+    }
+
+    .sub-label {
+      margin-top: 0.2rem;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .seconds {
+      margin-top: 0.6rem;
+      font-size: 1.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      width: 100%;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .controls button {
+      flex: 1 1 30%;
+      min-width: 90px;
+      padding: 0.55rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid #111827;
+      background: #ffffff;
+      color: #111827;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .controls button:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .controls button.primary {
+      background: #111827;
+      color: #ffffff;
+    }
+
+    .hint {
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="timer-wrapper">
+    <div class="title">썰 타이머 (60초 루프)</div>
+
+    <div class="circle-timer">
+      <svg viewBox="0 0 220 220">
+        <!-- 배경 원 -->
+        <circle class="circle-bg" cx="110" cy="110" r="90"></circle>
+
+        <!-- 진행도 원 -->
+        <circle class="circle-progress" cx="110" cy="110" r="90"></circle>
+
+        <!-- 시계 바늘 -->
+        <line class="hand" x1="110" y1="110" x2="110" y2="30"></line>
+      </svg>
+
+      <!-- 가운데 텍스트 -->
+      <div class="inner-content">
+        <div class="label" id="phaseLabel">썰 시작</div>
+        <div class="sub-label" id="phaseSubLabel">0 ~ 10초</div>
+        <div class="seconds" id="secondsText">60s</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="primary">시작</button>
+      <button id="stopBtn" disabled>정지</button>
+      <button id="resetBtn" disabled>초기화</button>
+    </div>
+
+    <div class="hint">시작 → 정지 후, 재개하려면 "시작(재개)" 버튼을 누르면 됩니다.</div>
+  </div>
+
+  <script>
+    // ----- 설정 -----
+    const TOTAL_TIME = 60;   // 전체 타이머 길이(초)
+    const FIRST_PHASE = 10;  // "썰 시작" 구간 길이(초)
+
+    // ----- 요소 -----
+    const progressCircle = document.querySelector(".circle-progress");
+    const hand = document.querySelector(".hand");
+    const phaseLabel = document.getElementById("phaseLabel");
+    const phaseSubLabel = document.getElementById("phaseSubLabel");
+    const secondsText = document.getElementById("secondsText");
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    // 원 둘레 계산
+    const radius = progressCircle.r.baseVal.value;
+    const circumference = 2 * Math.PI * radius;
+    progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
+    progressCircle.style.strokeDashoffset = circumference;
+
+    // 시계 중심과 바늘 길이
+    const CX = 110;
+    const CY = 110;
+    const HAND_LENGTH = 80;
+
+    // ----- 상태 -----
+    let isRunning = false;
+    let lastStartTimestamp = null;  // 직전 시작 시점 (performance.now)
+    let pausedElapsed = 0;          // 누적 경과 시간 (초) - 정지 상태에서 유지
+    let currentElapsed = 0;         // 실제 표현에 쓰는 경과 시간 (초)
+
+    function updateDisplay(elapsed) {
+      // elapsed: 0 ~ TOTAL_TIME
+      const progress = elapsed / TOTAL_TIME;
+      const remaining = TOTAL_TIME - elapsed;
+      const remainingInt = Math.ceil(remaining);
+
+      // 1) 진행도 원 (지나간 자리 채우기)
+      const offset = circumference * (1 - progress);
+      progressCircle.style.strokeDashoffset = offset;
+
+      // 2) 바늘 위치 (진행도와 동기화)
+      const angleRad = (progress * 2 * Math.PI) - Math.PI / 2; // 위쪽 시작
+      const x2 = CX + HAND_LENGTH * Math.cos(angleRad);
+      const y2 = CY + HAND_LENGTH * Math.sin(angleRad);
+      hand.setAttribute("x1", CX);
+      hand.setAttribute("y1", CY);
+      hand.setAttribute("x2", x2);
+      hand.setAttribute("y2", y2);
+
+      // 3) 텍스트
+      if (elapsed < FIRST_PHASE) {
+        phaseLabel.textContent = "썰 시작";
+        phaseSubLabel.textContent = "0 ~ 10초";
+      } else {
+        phaseLabel.textContent = "흑기사 가능\n썰 끝";
+        phaseSubLabel.textContent = "10 ~ 60초";
+      }
+
+      secondsText.textContent = `${remainingInt}s`;
+    }
+
+    function loop(timestamp) {
+      if (isRunning) {
+        const elapsedSinceStart = (timestamp - lastStartTimestamp) / 1000;
+        currentElapsed = (pausedElapsed + elapsedSinceStart) % TOTAL_TIME;
+      } else {
+        currentElapsed = pausedElapsed % TOTAL_TIME;
+      }
+
+      updateDisplay(currentElapsed);
+      requestAnimationFrame(loop);
+    }
+
+    // ----- 버튼 이벤트 -----
+    startBtn.addEventListener("click", () => {
+      if (isRunning) return;
+      isRunning = true;
+      lastStartTimestamp = performance.now();
+
+      // 버튼 상태
+      startBtn.textContent = pausedElapsed === 0 ? "시작" : "재개";
+      startBtn.disabled = true;
+      startBtn.classList.remove("primary");
+      stopBtn.disabled = false;
+      resetBtn.disabled = false;
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (!isRunning) return;
+      isRunning = false;
+      pausedElapsed = currentElapsed;
+
+      // 버튼 상태
+      startBtn.textContent = "재개";
+      startBtn.disabled = false;
+      startBtn.classList.add("primary");
+      stopBtn.disabled = true;
+      // resetBtn은 정지 후에도 활성화 유지
+    });
+
+    resetBtn.addEventListener("click", () => {
+      isRunning = false;
+      pausedElapsed = 0;
+      currentElapsed = 0;
+      updateDisplay(0);
+
+      // 버튼 상태 초기화
+      startBtn.textContent = "시작";
+      startBtn.disabled = false;
+      startBtn.classList.add("primary");
+      stopBtn.disabled = true;
+      resetBtn.disabled = true;
+    });
+
+    // 루프 시작 (처음에는 멈춰 있고, 60초 기준 상태만 보여줌)
+    updateDisplay(0);
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
